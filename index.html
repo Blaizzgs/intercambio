@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Intercambio de regalos</title>
+<meta name="description" content="Sorteo secreto para intercambio de regalos">
+<!--
+  RULETA DE INTERCAMBIO — un solo archivo, sin servidor (funciona en GitHub Pages).
+
+  ¿Cómo funciona?
+  1) MODO ORGANIZADOR (abrir la página sin nada después de la dirección):
+     - Se capturan los participantes (nombre + WhatsApp + grupo opcional).
+     - "Sortear" hace el sorteo en el navegador: nadie se toca a sí mismo, nadie se repite y
+       las personas del mismo "grupo" (p. ej. una pareja) no se tocan entre sí.
+     - El resultado NUNCA se muestra. Por cada persona se crea un ENLACE PERSONAL cifrado
+       (AES-GCM, la llave va dentro del mismo enlace, después del #). El organizador sólo ve
+       los enlaces, no los nombres que contienen.
+     - El botón "Enviar por WhatsApp" abre WhatsApp con el mensaje ya escrito (wa.me).
+       WhatsApp no permite enviar en automático desde una página: hay que darle "Enviar".
+  2) MODO PARTICIPANTE (abrir el enlace personal):
+     - La página descifra el enlace, muestra la ruleta y al girar se detiene en el nombre que le toca.
+     - Lo que va después del # no se manda a GitHub: nadie más lo ve.
+
+  Privacidad: el organizador podría abrir un enlace ajeno si quisiera; mientras no lo haga,
+  no sabe quién le tocó a quién. Los datos se guardan sólo en el navegador del organizador.
+-->
+<style>
+:root{--rojo:#C8323C;--rojo2:#E85A5A;--verde:#1E7A4C;--verde2:#2FA36B;--oro:#F2C14E;--crema:#FFF8EC;--tinta:#1E2421;--suave:#6B756F;--borde:#E7DCC8;--fondo1:#0F3B2A;--fondo2:#14523A}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:var(--tinta);background:radial-gradient(circle at 20% 0%,#1d6b4a 0,transparent 45%),linear-gradient(160deg,var(--fondo1),var(--fondo2));min-height:100vh}
+.nieve{position:fixed;inset:0;pointer-events:none;z-index:0}
+.cont{position:relative;z-index:1;max-width:860px;margin:0 auto;padding:28px 16px 60px}
+.titulo{color:#fff;text-align:center;margin:8px 0 22px}
+.titulo h1{margin:0;font-size:clamp(28px,6vw,44px);letter-spacing:.5px}
+.titulo p{margin:6px 0 0;color:#cfe7da}
+.tarjeta{background:var(--crema);border-radius:22px;padding:22px;box-shadow:0 18px 40px rgba(0,0,0,.25);margin-bottom:18px}
+.tarjeta h2{margin:0 0 4px;font-size:20px;display:flex;align-items:center;gap:10px}
+.tarjeta h2 .n{background:var(--rojo);color:#fff;width:28px;height:28px;border-radius:50%;display:inline-grid;place-items:center;font-size:15px}
+.ayuda{color:var(--suave);font-size:13.5px;margin:2px 0 12px}
+label{font-weight:600;font-size:14px;display:block;margin:10px 0 5px}
+input,textarea,select{width:100%;font:inherit;padding:11px 12px;border:1.5px solid var(--borde);border-radius:12px;background:#fff;color:var(--tinta);outline:none}
+input:focus,textarea:focus{border-color:var(--verde2);box-shadow:0 0 0 3px rgba(47,163,107,.15)}
+.f3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.btn{text-decoration:none;font:inherit;font-weight:700;border:0;border-radius:12px;padding:11px 18px;cursor:pointer;background:var(--verde);color:#fff;display:inline-flex;align-items:center;gap:8px;justify-content:center}
+.btn:hover{filter:brightness(1.08)}
+.btn.rojo{background:var(--rojo)}
+.btn.sec{background:#fff;color:var(--tinta);border:1.5px solid var(--borde)}
+.btn.wa{background:#25D366;color:#073b1f}
+.btn.grande{padding:15px 26px;font-size:18px;border-radius:16px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.icono{border:0;background:transparent;font-size:18px;cursor:pointer;color:var(--suave);padding:6px}
+table{width:100%;border-collapse:separate;border-spacing:0 6px}
+th{font-size:12.5px;color:var(--suave);text-align:left;font-weight:600;padding:0 4px}
+td{padding:0 3px;vertical-align:middle}
+td.num{width:30px;color:var(--suave);font-weight:700;text-align:center}
+.fila-botones{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+.aviso{background:#FFF1D6;border:1px solid #F2C14E;border-radius:12px;padding:10px 12px;font-size:13.5px;margin-top:12px}
+.error{background:#FDE3E3;border-color:#E85A5A}
+.envio{display:flex;align-items:center;gap:10px;background:#fff;border:1.5px solid var(--borde);border-radius:14px;padding:10px 12px;margin-bottom:8px}
+.envio .nom{flex:1;font-weight:700}
+.envio .nom small{display:block;font-weight:400;color:var(--suave)}
+.envio.hecho{border-color:var(--verde2);background:#F1FBF5}
+.chip{font-size:12px;border-radius:999px;padding:3px 9px;background:#eee;color:var(--suave);white-space:nowrap}
+.envio.hecho .chip{background:var(--verde2);color:#fff}
+.progreso{font-weight:700;color:var(--verde)}
+/* participante */
+.revelar{text-align:center}
+.revelar .hola{font-size:22px;font-weight:700;margin:0}
+.ruleta-caja{position:relative;width:min(420px,88vw);aspect-ratio:1;margin:18px auto 10px}
+.ruleta-caja canvas{width:100%;height:100%;display:block;filter:drop-shadow(0 12px 24px rgba(0,0,0,.25))}
+.puntero{position:absolute;top:-6px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:18px solid transparent;border-right:18px solid transparent;border-top:34px solid var(--rojo);filter:drop-shadow(0 3px 3px rgba(0,0,0,.3));z-index:2}
+.centro{position:absolute;inset:0;margin:auto;width:22%;height:22%;border-radius:50%;background:var(--crema);border:6px solid var(--oro);display:grid;place-items:center;font-size:clamp(22px,6vw,34px);z-index:2}
+.resultado{display:none;margin-top:8px}
+.resultado.on{display:block;animation:sube .6s ease}
+.resultado .le{color:var(--suave);margin:0}
+.resultado .quien{font-size:clamp(34px,9vw,56px);font-weight:900;color:var(--rojo);margin:4px 0 6px;line-height:1.05}
+.detalles{display:inline-grid;grid-template-columns:auto auto;gap:4px 12px;text-align:left;background:#fff;border:1.5px solid var(--borde);border-radius:14px;padding:12px 16px;margin-top:10px;font-size:15px}
+.detalles b{color:var(--suave);font-weight:600}
+.secreto{margin-top:14px;color:var(--suave);font-size:14px}
+@keyframes sube{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+#confeti{position:fixed;inset:0;pointer-events:none;z-index:5}
+.oculto{display:none!important}
+footer{color:#cfe7da;text-align:center;font-size:12.5px;margin-top:10px;opacity:.8}
+@media (max-width:620px){.f3{grid-template-columns:1fr}.tabla-movil th:nth-child(4){display:none}}
+</style>
+</head>
+<body>
+<canvas class="nieve" id="nieve"></canvas>
+<canvas id="confeti"></canvas>
+<div class="cont">
+  <div class="titulo"><h1>🎁 Intercambio de regalos</h1><p id="subtitulo">Sorteo secreto: nadie sabe a quién le tocó quién</p></div>
+
+  <!-- ===================== MODO ORGANIZADOR ===================== -->
+  <div id="organizador">
+    <div class="tarjeta">
+      <h2><span class="n">1</span> Datos del intercambio</h2>
+      <p class="ayuda">Opcional. Lo verá cada persona junto con el nombre que le toque.</p>
+      <label for="evento">Nombre del intercambio</label>
+      <input id="evento" placeholder="Intercambio navideño 2026">
+      <div class="f3">
+        <div><label for="monto">Monto del regalo</label><input id="monto" placeholder="$500"></div>
+        <div><label for="fecha">Fecha</label><input id="fecha" placeholder="20 de diciembre"></div>
+        <div><label for="lugar">Lugar</label><input id="lugar" placeholder="Oficina"></div>
+      </div>
+      <label for="nota">Nota para todos</label>
+      <input id="nota" placeholder="Trae tu regalo envuelto 🎄">
+    </div>
+
+    <div class="tarjeta">
+      <h2><span class="n">2</span> Participantes</h2>
+      <p class="ayuda">WhatsApp a 10 dígitos. <b>Grupo</b> es opcional: las personas con el mismo grupo (por ejemplo una pareja) no se tocan entre sí.</p>
+      <table class="tabla-movil"><thead><tr><th></th><th>Nombre</th><th>WhatsApp</th><th>Grupo</th><th></th></tr></thead><tbody id="filas"></tbody></table>
+      <div class="fila-botones">
+        <button class="btn sec" id="btn-agregar">＋ Agregar persona</button>
+        <button class="btn sec" id="btn-pegar">📋 Pegar lista</button>
+      </div>
+      <div id="caja-pegar" class="oculto">
+        <label for="lista">Pega una persona por renglón: <i>Nombre, WhatsApp, Grupo</i> (teléfono y grupo opcionales)</label>
+        <textarea id="lista" rows="6" placeholder="Ana López, 3312345678&#10;Juan Pérez, 3398765432, pareja1&#10;María Ruiz, 3311122233, pareja1"></textarea>
+        <div class="fila-botones"><button class="btn" id="btn-importar">Agregar a la lista</button></div>
+      </div>
+      <div id="msg-part"></div>
+    </div>
+
+    <div class="tarjeta">
+      <h2><span class="n">3</span> Sortear y enviar</h2>
+      <p class="ayuda">El resultado <b>no se muestra</b>. A cada persona le mandas su enlace; ella lo abre, gira la ruleta y ve a quién le regala.</p>
+      <div class="fila-botones"><button class="btn rojo grande" id="btn-sortear">🎲 Sortear</button></div>
+      <div id="msg-sorteo"></div>
+      <div id="envios" class="oculto" style="margin-top:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>Enviar a cada persona</b><span class="progreso" id="progreso"></span></div>
+        <div id="lista-envios"></div>
+        <div class="aviso">💡 Al tocar <b>Enviar por WhatsApp</b> se abre WhatsApp con el mensaje listo; sólo dale <b>Enviar</b> y regresa aquí. El mensaje lleva un enlace, no el nombre. <b>No abras los enlaces de otros</b> para que el sorteo siga siendo secreto también para ti.</div>
+        <div class="fila-botones"><button class="btn sec" id="btn-reiniciar">🗑 Empezar de nuevo</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODO PARTICIPANTE ===================== -->
+  <div id="participante" class="oculto">
+    <div class="tarjeta revelar">
+      <p class="hola" id="hola">¡Hola!</p>
+      <p class="ayuda" id="instr">Gira la ruleta para descubrir a quién le regalas.</p>
+      <div class="ruleta-caja"><div class="puntero"></div><canvas id="ruleta" width="840" height="840"></canvas><div class="centro">🎁</div></div>
+      <button class="btn rojo grande" id="btn-girar">🎡 Girar la ruleta</button>
+      <div class="resultado" id="resultado">
+        <p class="le">Te toca regalarle a:</p>
+        <p class="quien" id="quien"></p>
+        <div class="detalles" id="detalles"></div>
+        <p class="secreto">🤫 Es secreto: no se lo digas a nadie. Toma captura para que no se te olvide.</p>
+      </div>
+    </div>
+  </div>
+  <div id="malo" class="tarjeta oculto" style="text-align:center"><h2 style="justify-content:center">😕 Enlace incompleto</h2><p class="ayuda">Pide a quien organiza que te vuelva a mandar tu enlace completo.</p></div>
+  <footer>Hecho con cariño · el sorteo se guarda cifrado dentro de cada enlace</footer>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const CLAVE = "ruleta_intercambio_v1";
+
+// ------------------------------------------------------------------ cifrado (AES-GCM, la llave va en el enlace)
+const b64u = b => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const deb64u = s => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), c => c.charCodeAt(0));
+async function cifrar(obj){
+  const llave = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+  const k = await crypto.subtle.importKey("raw", llave, "AES-GCM", false, ["encrypt"]);
+  const ct = await crypto.subtle.encrypt({name:"AES-GCM", iv}, k, new TextEncoder().encode(JSON.stringify(obj)));
+  const datos = new Uint8Array(12 + ct.byteLength); datos.set(iv); datos.set(new Uint8Array(ct), 12);
+  return b64u(datos) + "." + b64u(llave);
+}
+async function descifrar(frag){
+  const [d, l] = frag.split(".");
+  const datos = deb64u(d), k = await crypto.subtle.importKey("raw", deb64u(l), "AES-GCM", false, ["decrypt"]);
+  const pt = await crypto.subtle.decrypt({name:"AES-GCM", iv:datos.slice(0, 12)}, k, datos.slice(12));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+
+// ------------------------------------------------------------------ sorteo
+function azar(n){ const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] % n; }
+function barajar(arr){ const a = arr.slice(); for (let i = a.length - 1; i > 0; i--){ const j = azar(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+/** Regresa receptor[i] = índice al que le regala i. Nadie a sí mismo ni a alguien de su mismo grupo. */
+function sortear(personas){
+  const n = personas.length, idx = [...Array(n).keys()];
+  const prohibido = (a, b) => a === b || (personas[a].grupo && personas[a].grupo.toLowerCase() === (personas[b].grupo || "").toLowerCase());
+  for (let intento = 0; intento < 20000; intento++){
+    const r = barajar(idx);
+    if (r.every((b, a) => !prohibido(a, b))) return r;
+  }
+  return null;
+}
+
+// ------------------------------------------------------------------ MODO ORGANIZADOR
+let estado = {personas:[], enlaces:[], enviados:[], datos:{}};
+function guardar(){ try { localStorage.setItem(CLAVE, JSON.stringify(estado)); } catch (e) {} }
+function cargar(){ try { const s = JSON.parse(localStorage.getItem(CLAVE)); if (s && s.personas) estado = Object.assign(estado, s); } catch (e) {} }
+const camposDatos = ["evento", "monto", "fecha", "lugar", "nota"];
+
+function pintarFilas(){
+  const tb = $("filas"); tb.innerHTML = "";
+  if (!estado.personas.length) estado.personas.push({nombre:"", tel:"", grupo:""}, {nombre:"", tel:"", grupo:""}, {nombre:"", tel:"", grupo:""});
+  estado.personas.forEach((p, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="num">${i + 1}</td>
+      <td><input data-i="${i}" data-k="nombre" value="${esc(p.nombre)}" placeholder="Nombre"></td>
+      <td><input data-i="${i}" data-k="tel" value="${esc(p.tel)}" placeholder="10 dígitos" inputmode="tel"></td>
+      <td><input data-i="${i}" data-k="grupo" value="${esc(p.grupo)}" placeholder="—"></td>
+      <td><button class="icono" title="Quitar" data-quitar="${i}">✕</button></td>`;
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll("input").forEach(el => el.oninput = () => { estado.personas[+el.dataset.i][el.dataset.k] = el.value; marcarCambio(); });
+  tb.querySelectorAll("[data-quitar]").forEach(b => b.onclick = () => { estado.personas.splice(+b.dataset.quitar, 1); marcarCambio(); pintarFilas(); });
+}
+function marcarCambio(){
+  // si ya había sorteo y se cambia la lista, el sorteo deja de valer
+  if (estado.enlaces.length){ estado.enlaces = []; estado.enviados = []; $("envios").classList.add("oculto");
+    $("msg-sorteo").innerHTML = `<div class="aviso">Cambiaste la lista: vuelve a <b>Sortear</b>.</div>`; }
+  guardar();
+}
+camposDatos.forEach(k => { $(k).oninput = () => { estado.datos[k] = $(k).value; marcarCambio(); }; });
+$("btn-agregar").onclick = () => { estado.personas.push({nombre:"", tel:"", grupo:""}); marcarCambio(); pintarFilas(); $("filas").querySelector(`input[data-i="${estado.personas.length - 1}"]`).focus(); };
+$("btn-pegar").onclick = () => $("caja-pegar").classList.toggle("oculto");
+$("btn-importar").onclick = () => {
+  const nuevas = $("lista").value.split(/\n+/).map(l => l.split(/[,;\t]/).map(x => x.trim())).filter(c => c[0]).map(c => ({nombre:c[0], tel:c[1] || "", grupo:c[2] || ""}));
+  estado.personas = estado.personas.filter(p => p.nombre.trim()).concat(nuevas);
+  $("lista").value = ""; $("caja-pegar").classList.add("oculto"); marcarCambio(); pintarFilas();
+};
+
+function telWA(t){
+  let d = String(t || "").replace(/\D/g, "");
+  if (d.length === 10) d = "52" + d;              // México
+  if (d.length === 13 && d.startsWith("521")) d = "52" + d.slice(3);
+  return d.length >= 11 ? d : "";
+}
+function mensaje(p, enlace){
+  const ev = estado.datos.evento ? ` del *${estado.datos.evento}*` : "";
+  return `🎁 ¡Hola ${p.nombre}! Ya está el sorteo${ev}.\nAbre tu enlace y gira la ruleta para saber a quién le regalas (es secreto 🤫):\n${enlace}`;
+}
+
+$("btn-sortear").onclick = async () => {
+  const personas = estado.personas.map(p => ({nombre:p.nombre.trim(), tel:p.tel.trim(), grupo:p.grupo.trim()})).filter(p => p.nombre);
+  const msg = $("msg-sorteo");
+  const repetidos = personas.map(p => p.nombre.toLowerCase()).filter((n, i, a) => a.indexOf(n) !== i);
+  if (personas.length < 3){ msg.innerHTML = `<div class="aviso error">Se necesitan al menos 3 personas.</div>`; return; }
+  if (repetidos.length){ msg.innerHTML = `<div class="aviso error">Hay nombres repetidos (${esc(repetidos[0])}). Agrega un apellido o inicial para distinguirlos.</div>`; return; }
+  const sinTel = personas.filter(p => !telWA(p.tel)).length;
+  if (estado.enlaces.length && !confirm("Ya hay un sorteo. Si sorteas de nuevo, los enlaces que ya mandaste dejan de valer. ¿Continuar?")) return;
+  const r = sortear(personas);
+  if (!r){ msg.innerHTML = `<div class="aviso error">No se puede sortear con esos grupos (hay demasiadas personas en el mismo grupo). Revisa la columna Grupo.</div>`; return; }
+  const base = location.href.split("#")[0].split("?")[0];
+  const nombres = personas.map(p => p.nombre);
+  const enlaces = [];
+  for (let i = 0; i < personas.length; i++){
+    const payload = {v:1, p:personas[i].nombre, t:personas[r[i]].nombre, n:nombres.filter(x => x !== personas[i].nombre), d:estado.datos};
+    enlaces.push(base + "#" + await cifrar(payload));
+  }
+  estado.personas = personas; estado.enlaces = enlaces; estado.enviados = personas.map(() => false); guardar();
+  pintarFilas();
+  msg.innerHTML = `<div class="aviso">✅ ¡Sorteo listo! Nadie se toca a sí mismo${personas.some(p => p.grupo) ? " ni a alguien de su grupo" : ""}. ${sinTel ? `<br>${sinTel} persona(s) no tienen WhatsApp válido: usa <b>Copiar enlace</b> y mándaselo por otro medio.` : ""}</div>`;
+  pintarEnvios();
+};
+function pintarEnvios(){
+  if (!estado.enlaces.length) return;
+  $("envios").classList.remove("oculto");
+  const L = $("lista-envios"); L.innerHTML = "";
+  estado.personas.forEach((p, i) => {
+    const wa = telWA(p.tel), d = document.createElement("div");
+    d.className = "envio" + (estado.enviados[i] ? " hecho" : "");
+    d.innerHTML = `<div class="nom">${esc(p.nombre)}<small>${wa ? "+" + wa : "sin WhatsApp"}</small></div>
+      <span class="chip">${estado.enviados[i] ? "Enviado ✓" : "Pendiente"}</span>
+      ${wa ? `<a class="btn wa" target="_blank" rel="noopener" data-env="${i}" href="https://wa.me/${wa}?text=${encodeURIComponent(mensaje(p, estado.enlaces[i]))}">WhatsApp</a>` : ""}
+      <button class="btn sec" data-copiar="${i}" title="Copiar mensaje con enlace">📋</button>`;
+    L.appendChild(d);
+  });
+  L.querySelectorAll("[data-env]").forEach(a => a.onclick = () => { estado.enviados[+a.dataset.env] = true; guardar(); setTimeout(pintarEnvios, 300); });
+  L.querySelectorAll("[data-copiar]").forEach(b => b.onclick = async () => {
+    const i = +b.dataset.copiar;
+    try { await navigator.clipboard.writeText(mensaje(estado.personas[i], estado.enlaces[i])); b.textContent = "✓"; estado.enviados[i] = true; guardar(); setTimeout(pintarEnvios, 900); }
+    catch (e) { prompt("Copia el mensaje:", mensaje(estado.personas[i], estado.enlaces[i])); }
+  });
+  const n = estado.enviados.filter(Boolean).length;
+  $("progreso").textContent = `${n} de ${estado.personas.length} enviados`;
+}
+$("btn-reiniciar").onclick = () => {
+  if (!confirm("¿Borrar participantes y sorteo de este navegador?")) return;
+  estado = {personas:[], enlaces:[], enviados:[], datos:{}}; guardar(); camposDatos.forEach(k => $(k).value = "");
+  $("envios").classList.add("oculto"); $("msg-sorteo").innerHTML = ""; pintarFilas();
+};
+
+// ------------------------------------------------------------------ MODO PARTICIPANTE (ruleta)
+const COLORES = ["#C8323C", "#1E7A4C", "#F2C14E", "#2FA36B", "#E85A5A", "#14523A"];
+let datosP = null, girando = false;
+function dibujarRuleta(nombres, ang){
+  const c = $("ruleta"), x = c.getContext("2d"), W = c.width, R = W / 2 - 10, n = nombres.length, s = 2 * Math.PI / n;
+  x.clearRect(0, 0, W, W); x.save(); x.translate(W / 2, W / 2); x.rotate(ang);
+  for (let i = 0; i < n; i++){
+    x.beginPath(); x.moveTo(0, 0); x.arc(0, 0, R, i * s, (i + 1) * s); x.closePath();
+    let col = COLORES[i % COLORES.length];
+    if (i === n - 1 && n % COLORES.length === 1) col = COLORES[2];   // que no queden dos iguales juntos al cerrar el círculo
+    x.fillStyle = col;
+    x.fill(); x.lineWidth = 4; x.strokeStyle = "#FFF8EC"; x.stroke();
+    x.save(); x.rotate(i * s + s / 2); x.textAlign = "right"; x.textBaseline = "middle";
+    const claro = col === "#F2C14E";
+    x.fillStyle = claro ? "#1E2421" : "#FFFFFF";
+    let tam = Math.min(46, 560 / Math.max(n, 4)); x.font = `700 ${tam}px system-ui, sans-serif`;
+    while (x.measureText(nombres[i]).width > R * .68 && tam > 26){ tam -= 2; x.font = `700 ${tam}px system-ui, sans-serif`; }
+    let t = nombres[i]; while (x.measureText(t).width > R * .68 && t.length > 3) t = t.slice(0, -2) + "…";
+    x.fillText(t, R - 26, 0); x.restore();
+  }
+  x.restore();
+  x.beginPath(); x.arc(W / 2, W / 2, R, 0, 2 * Math.PI); x.lineWidth = 14; x.strokeStyle = "#F2C14E"; x.stroke();
+}
+let tic = null;
+function sonido(){ try { tic = tic || new (window.AudioContext || window.webkitAudioContext)(); const o = tic.createOscillator(), g = tic.createGain();
+  o.frequency.value = 900; g.gain.setValueAtTime(.05, tic.currentTime); g.gain.exponentialRampToValueAtTime(.0001, tic.currentTime + .05);
+  o.connect(g); g.connect(tic.destination); o.start(); o.stop(tic.currentTime + .05); } catch (e) {} }
+function girar(){
+  if (girando || !datosP) return;
+  girando = true; $("btn-girar").disabled = true;
+  // ruleta: todos menos la persona; el nombre que le toca se elige del sorteo (ya viene en el enlace)
+  const nombres = datosP.ruleta, n = nombres.length, s = 2 * Math.PI / n, k = nombres.indexOf(datosP.t);
+  // el puntero está arriba (-90°). Ángulo final para que el centro del segmento k quede bajo el puntero:
+  const objetivo = -Math.PI / 2 - (k * s + s / 2) + (Math.random() - .5) * s * .6;
+  const vueltas = 6 + Math.floor(Math.random() * 3);
+  const inicio = datosP.ang || 0;
+  const destino = inicio - (((inicio - objetivo) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI)) - vueltas * 2 * Math.PI;
+  const dur = 5200, t0 = performance.now(); let ultimo = -1;
+  const paso = ahora => {
+    const u = Math.min(1, (ahora - t0) / dur), e = 1 - Math.pow(1 - u, 4);
+    const a = inicio + (destino - inicio) * e; datosP.ang = a; dibujarRuleta(nombres, a);
+    const seg = Math.floor((((-Math.PI / 2 - a) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) / s);
+    if (seg !== ultimo){ ultimo = seg; sonido(); }
+    if (u < 1) requestAnimationFrame(paso); else terminar();
+  };
+  requestAnimationFrame(paso);
+}
+function terminar(){
+  girando = false;
+  $("quien").textContent = datosP.t;
+  const d = datosP.d || {}, filas = [["Monto", d.monto], ["Fecha", d.fecha], ["Lugar", d.lugar], ["Nota", d.nota]].filter(r => r[1]);
+  $("detalles").innerHTML = filas.map(([a, b]) => `<b>${a}</b><span>${esc(b)}</span>`).join("");
+  $("detalles").style.display = filas.length ? "" : "none";
+  $("resultado").classList.add("on"); $("btn-girar").classList.add("oculto"); $("instr").classList.add("oculto");
+  confeti();
+}
+async function modoParticipante(frag){
+  $("organizador").classList.add("oculto");
+  try {
+    const p = await descifrar(frag);
+    datosP = p;
+    // la ruleta muestra a los demás participantes (no a uno mismo); mínimo 6 casillas para que se vea bonita
+    let ruleta = barajar(p.n);
+    while (ruleta.length < 6) ruleta = ruleta.concat(barajar(p.n));
+    datosP.ruleta = ruleta;
+    $("hola").textContent = `¡Hola, ${p.p}!`;
+    if (p.d && p.d.evento) $("subtitulo").textContent = p.d.evento;
+    $("participante").classList.remove("oculto");
+    dibujarRuleta(ruleta, 0);
+  } catch (e) {
+    $("malo").classList.remove("oculto");
+  }
+}
+$("btn-girar").onclick = girar;
+
+// ------------------------------------------------------------------ adornos: nieve y confeti
+(function nieve(){
+  const c = $("nieve"), x = c.getContext("2d"); let W, H, copos = [];
+  const tam = () => { W = c.width = innerWidth; H = c.height = innerHeight; copos = Array.from({length: Math.min(90, W / 12)}, () => ({x: Math.random() * W, y: Math.random() * H, r: 1 + Math.random() * 2.5, v: .3 + Math.random() * .8})); };
+  tam(); addEventListener("resize", tam);
+  (function anim(){ x.clearRect(0, 0, W, H); x.fillStyle = "rgba(255,255,255,.75)";
+    for (const f of copos){ f.y += f.v; f.x += Math.sin(f.y / 40) * .3; if (f.y > H) { f.y = -5; f.x = Math.random() * W; } x.beginPath(); x.arc(f.x, f.y, f.r, 0, 6.3); x.fill(); }
+    requestAnimationFrame(anim); })();
+})();
+function confeti(){
+  const c = $("confeti"), x = c.getContext("2d"); c.width = innerWidth; c.height = innerHeight;
+  const p = Array.from({length: 180}, () => ({x: innerWidth / 2, y: innerHeight * .35, vx: (Math.random() - .5) * 16, vy: -Math.random() * 14 - 4, r: 4 + Math.random() * 5, c: COLORES[Math.floor(Math.random() * COLORES.length)], g: Math.random() * 6}));
+  let f = 0;
+  (function anim(){ x.clearRect(0, 0, c.width, c.height);
+    for (const q of p){ q.vy += .35; q.x += q.vx; q.y += q.vy; q.vx *= .99; q.g += .2; x.save(); x.translate(q.x, q.y); x.rotate(q.g); x.fillStyle = q.c; x.fillRect(-q.r, -q.r / 2, q.r * 2, q.r); x.restore(); }
+    if (++f < 220) requestAnimationFrame(anim); else x.clearRect(0, 0, c.width, c.height); })();
+}
+
+// ------------------------------------------------------------------ arranque
+const frag = location.hash.slice(1);
+if (frag){ modoParticipante(frag); }
+else {
+  cargar();
+  camposDatos.forEach(k => $(k).value = estado.datos[k] || "");
+  pintarFilas(); pintarEnvios();
+}
+</script>
+</body>
+</html>
